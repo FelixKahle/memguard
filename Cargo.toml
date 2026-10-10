@@ -1,0 +1,70 @@
+# memguard: runs a command under a resident-memory limit for its whole process tree, and checks commands against a
+# rules file that says which of them must run under that limit.
+[package]
+name = "memguard"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+description = "Kill a process tree when its resident memory passes a limit, and check which commands need that guard."
+
+[dependencies]
+# Parses limits such as `10G` or `1.5GiB` and prints sizes such as `12.3 GB`; both are easy to get subtly wrong by hand.
+bytesize = { version = "2.7.0", default-features = false, features = ["std"] }
+# Command-line parsing for the two subcommands. A hand-rolled parser would get help, errors and trailing arguments
+# wrong. `help`, `usage` and `error-context` keep `--help` and readable errors; colour and suggestions are not needed.
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+# Parses `--interval` values such as `500ms` or `2s`, which std cannot do.
+humantime = { version = "2.4.0", default-features = false }
+# The rules file's patterns are regular expressions; matching them by hand is out of the question. `unicode-perl` is
+# needed because patterns use the Unicode-aware `\s`, `\S` and `\b`; the `perf` features are left out because a
+# check matches one short string per process.
+regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
+# Derives deserialisation of the rules file, the only data that crosses a process boundary.
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+# Portable process table (pids, parents, resident memory) and kill, instead of shelling out to `ps` or calling libc.
+# Only `system` is enabled: disks, networks, components and users are not used.
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+# Reads the rules file. `parse` reads TOML, `serde` deserialises it into the rules type and `std` makes its error a
+# `std::error::Error`; `display` (writing TOML) is not needed.
+toml = { version = "1.1.8", default-features = false, features = ["std", "serde", "parse"] }
+
+[dev-dependencies]
+# Property tests for the policy and the process-tree walk; a strategy library is not worth writing by hand.
+proptest = "1.11.0"
+# The serde round trip of the rules type that every serialisable type gets.
+serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unreachable_pub = "warn"
+
+[lints.clippy]
+missing_docs_in_private_items = "deny"
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+missing_panics_doc = "deny"
+missing_errors_doc = "deny"
+unnecessary_safety_comment = "deny"
+unnecessary_safety_doc = "deny"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+missing_crate_level_docs = "deny"
+bare_urls = "deny"
+invalid_codeblock_attributes = "deny"
+invalid_rust_codeblocks = "deny"
+
+# Own code stays debuggable in dev builds while dependencies are optimised.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"

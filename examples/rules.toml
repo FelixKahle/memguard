@@ -1,0 +1,19 @@
+# memguard rules for Rust projects: cargo test, bench, run and nextest, and test binaries under target/, must run
+# through `memguard run`. Copy this file to ~/.config/memguard/rules.toml.
+
+# Commands matched by any of these regexes must run through the guard.
+guarded = [
+    '(^|[;&|(]\s*)(\S+=\S+\s+)*cargo\s+(\+\S+\s+)?(test|bench|run|nextest)\b',
+    'target/(debug|release)/(deps/)?\S+-[0-9a-f]{16}\b',
+]
+
+# A command matching any of these is already guarded (or exempt) and is allowed.
+# A command that invokes `memguard run` is always allowed and needs no entry here.
+exempt = [
+    '--no-run',
+]
+
+# Shown when a command is denied. The literal token {command} is replaced by the offending command.
+reason = """`{command}` runs tests or a binary without the memory guard. The machine swaps and that damages the \
+hardware. Wrap it: memguard run 10G {command} (the guard kills the process tree at the limit and prints the peak; \
+exit 137 means killed). Builds without running are allowed (--no-run)."""
