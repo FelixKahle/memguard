@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Felix Kahle
+// SPDX-License-Identifier: MIT
+//
+// This file is part of memguard and is distributed under the MIT License; see the LICENSE file at the root of
+// the repository for the full text.
+
 //! Keeps runaway test suites from swapping a machine to death.
 //!
 //! The crate has two halves, both used by the `memguard` binary:

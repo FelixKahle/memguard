@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Felix Kahle
+// SPDX-License-Identifier: MIT
+//
+// This file is part of memguard and is distributed under the MIT License; see the LICENSE file at the root of
+// the repository for the full text.
+
 //! The `memguard` command line: `memguard run` guards a command's memory, `memguard check` says whether a command
 //! must run under that guard.
 

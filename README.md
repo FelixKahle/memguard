@@ -179,3 +179,7 @@ checked() { memguard check "$*" && "$@"; }
 ```
 
 `checked cargo test` then refuses with the reason, and `checked memguard run 10G cargo test` runs.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

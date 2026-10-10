@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Felix Kahle
+// SPDX-License-Identifier: MIT
+//
+// This file is part of memguard and is distributed under the MIT License; see the LICENSE file at the root of
+// the repository for the full text.
+
 //! Which commands must run through `memguard run`.
 //!
 //! The rules are data. [`Rules`] lists the regexes of commands that must be guarded, the regexes of commands that are
