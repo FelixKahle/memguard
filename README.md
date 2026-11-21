@@ -2,8 +2,10 @@
 
 `memguard` keeps a runaway command from swapping your machine to death. It does two things:
 
-- `memguard run <limit> <command>...` runs a command and kills its whole process tree (the command and every
-  descendant) the moment the tree's combined resident memory passes the limit.
+- `memguard run <limit> <command>...` runs a command and kills its whole process tree (the command, its session and
+  every descendant) the moment the tree's combined resident memory passes the limit. Optionally it also kills the
+  tree when any single process passes a size of its own, or when the command runs too long. Nothing the command
+  starts outlives it: not what it leaves running, not what it orphans, and not even a guard killed with `SIGKILL`.
 - `memguard check <command>` says whether a shell command must run through `memguard run`, by rules you write in a
   TOML file (for example: every `cargo test` must). It is meant for tools that run commands on your behalf, such as
   coding agents, editors or git hooks; see [Integrations](#integrations).
@@ -25,6 +27,7 @@ memguard run 10G cargo test
 memguard run 10G cargo test -- --nocapture
 memguard run --interval 2s 1.5GiB npm test
 memguard run 512M ./target/release/my-tool --big-input data.bin
+memguard run --per-process 2G --timeout 15m 6G cargo test
 ```
 
 `<limit>` is a byte size with a unit: `10G`, `10GB`, `512M`, `1.5GiB`. `G`, `M` and `K` are decimal (`10G` is
@@ -32,32 +35,87 @@ memguard run 512M ./target/release/my-tool --big-input data.bin
 ten bytes by accident. Zero is rejected too.
 
 Every `--interval` (default `500ms`; `humantime` syntax such as `50ms`, `2s`, `1m`) the guard sums the resident
-memory of the command and all of its descendants. When the sum is above the limit, every process in the tree gets
-`SIGKILL` and the guard prints:
+memory of the command's whole tree (see [What the guard contains](#what-the-guard-contains)). When the sum is above the
+limit, the tree is killed and the guard prints:
 
 ```text
 memguard: killed the tree at 12.3 GB (limit 10.0 GB)
 ```
 
-Otherwise it waits for the command and prints the largest total it saw:
+Two more limits are optional, and either one kills the tree the same way:
+
+- `--per-process <size>` (same syntax as `<limit>`): any single process of the tree holds more than this. Useful
+  when one runaway test binary should be stopped long before the whole tree reaches its limit.
+- `--timeout <duration>` (`humantime` syntax: `90s`, `15m`, `1h 30m`): the command has run for longer than this,
+  measured from when it started, not counting time it spent suspended. The guard wakes up when the timeout runs out,
+  not at the next `--interval`.
+
+```text
+memguard: killed the tree: process 41027 (rustc) held 2.4 GB (per-process limit 2.0 GB); tree peak 3.1 GB
+memguard: killed the tree after 15m 312ms (timeout 15m); peak 1.2 GB
+```
+
+If several limits are passed at the same sample, the per-process limit is reported first, then the tree limit, then
+the timeout.
+
+Otherwise the guard returns the moment the command exits, kills whatever the command left running, and prints the
+largest total it saw:
 
 ```text
 memguard: peak 1.2 GB
+memguard: peak 1.2 GB; killed 2 processes the command left running
 ```
 
 Everything after `<limit>` is the command, passed through untouched, so options after the command name (including
-`--` and `--interval`) belong to the command, not to `memguard`. Descendants still running when the command itself
-exits are left alone. Signals are not forwarded and no process group is created.
+`--`, `--interval` and `--timeout`) belong to the command, not to `memguard`.
+
+### What the guard contains
+
+The command is started as the leader of a session of its own. Its tree is the command, every process of that
+session, and every descendant of any of them. A process whose parent exits stays in its session, so backgrounded and
+orphaned processes (`sh -c 'hog &'`) are still counted and still killed. A process leaves the tree only by starting a
+session of its own (`setsid`, as daemons do) while none of its ancestors is in the tree any more.
+
+A tree is killed in two steps: every process of it is stopped with `SIGSTOP`, the process table is read again until
+no process of the tree is left running, and only then does each get `SIGKILL`. A stopped process cannot fork, so
+nothing can fork its way past the kill.
+
+The guard also keeps the tree from outliving it:
+
+| What happens to `memguard` | What happens to the tree |
+|---|---|
+| `SIGTERM`, `SIGINT`, `SIGHUP` or `SIGQUIT` (`kill`, a process manager, an agent stopping the command, Ctrl-C, `Ctrl-\`, a closed terminal) | killed at once, then `memguard` exits as if it had died of that signal |
+| `SIGTSTP` (Ctrl-Z) | stopped together with `memguard`; continued when `memguard` is |
+| killed in any other way, `SIGKILL` included | killed by the watchdog |
+
+```text
+memguard: received SIGTERM, killed the tree; peak 1.2 GB
+memguard: the guard ended without cleaning up; the watchdog killed 3 processes it left
+```
+
+The watchdog is a second `memguard` process that the guard starts before the command, in a process group of its own
+so that signals sent to the guard's job do not reach it. It holds a pipe whose only writer is the guard. If the pipe
+closes before the guard has said it is done, however the guard died, the watchdog kills what is left of the tree.
+
+Running in a session of its own means the command has no controlling terminal. It still reads and writes the
+terminal it inherits as stdin, stdout and stderr, and colours still work, but Ctrl-C and Ctrl-Z reach `memguard`
+rather than the command: Ctrl-C kills the tree outright, without giving it a chance to clean up. A program that opens
+`/dev/tty` itself, such as a password prompt, cannot.
+
+What the guard cannot contain: a process that starts a session of its own after its whole ancestry in the tree has
+exited, all between two samples; a process that belongs to another user (for example through `sudo`), which it may
+neither stop nor kill; and memory the tree holds through shared memory or the kernel rather than as resident memory
+of its processes. Only a kernel facility such as a Linux cgroup closes these, and none exists on macOS.
 
 ### Exit codes
 
 | Exit code | Meaning |
 |---|---|
 | the command's own code | the command exited on its own |
-| 128 + N | the command died of signal N (for example 143 for `SIGTERM`) |
-| 137 | the guard killed the tree for passing the limit |
+| 128 + N | the command died of signal N (for example 143 for `SIGTERM`), or `memguard` received signal N and killed the tree |
+| 137 | the guard killed the tree for passing a limit (tree, per-process or timeout; stderr says which) |
 | 1 | `memguard` itself failed, for example the command could not be started |
-| 2 | invalid arguments, for example a limit without a unit |
+| 2 | invalid arguments, for example a limit or timeout without a unit |
 
 ## `memguard check`
 

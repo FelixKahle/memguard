@@ -45,6 +45,18 @@ pub enum Error {
         /// The text that was given as the limit.
         input: String,
     },
+    /// A time limit could not be parsed as a duration with a unit.
+    TimeLimitUnparsable {
+        /// The text that was given as the limit.
+        input: String,
+        /// Why the duration parser rejected it.
+        source: humantime::DurationError,
+    },
+    /// A time limit was zero, which would kill every command before it starts.
+    TimeLimitZero {
+        /// The text that was given as the limit.
+        input: String,
+    },
     /// The command to guard could not be started.
     Spawn {
         /// The program that was to be run.
@@ -52,6 +64,20 @@ pub enum Error {
         /// Why the operating system refused to start it.
         source: io::Error,
     },
+    /// The handlers for the signals that stop or suspend the guard could not be installed.
+    SignalHandler(io::Error),
+    /// A thread the guard needs could not be started.
+    ThreadSpawn(io::Error),
+    /// The guard could not stop itself to suspend.
+    Suspend(io::Error),
+    /// The watchdog process could not be started.
+    WatchdogSpawn(io::Error),
+    /// The watchdog process could not be told about the guarded command.
+    WatchdogLost(io::Error),
+    /// The watchdog could not read the pipe from its guard.
+    LifelineUnreadable(io::Error),
+    /// The watchdog read a line from its guard that is not a message it understands.
+    MessageInvalid(serde_json::Error),
     /// The status of the guarded command could not be collected.
     Wait(io::Error),
     /// The rules file could not be read.
@@ -95,11 +121,40 @@ impl fmt::Display for Error {
                     "invalid MemoryLimit `{input}`: the limit must be greater than zero"
                 )
             }
+            Self::TimeLimitUnparsable { input, source } => {
+                write!(f, "invalid TimeLimit `{input}`: {source}")
+            }
+            Self::TimeLimitZero { input } => {
+                write!(
+                    f,
+                    "invalid TimeLimit `{input}`: the limit must be greater than zero"
+                )
+            }
             Self::Spawn { program, source } => {
                 write!(
                     f,
                     "could not start `{}`: {source}",
                     program.to_string_lossy()
+                )
+            }
+            Self::SignalHandler(source) => {
+                write!(f, "could not install the signal handlers: {source}")
+            }
+            Self::ThreadSpawn(source) => write!(f, "could not start a thread: {source}"),
+            Self::Suspend(source) => write!(f, "could not suspend the guard: {source}"),
+            Self::WatchdogSpawn(source) => {
+                write!(f, "could not start the watchdog process: {source}")
+            }
+            Self::WatchdogLost(source) => {
+                write!(f, "could not reach the watchdog process: {source}")
+            }
+            Self::LifelineUnreadable(source) => {
+                write!(f, "the watchdog could not read from its guard: {source}")
+            }
+            Self::MessageInvalid(source) => {
+                write!(
+                    f,
+                    "the watchdog got an invalid message from its guard: {source}"
                 )
             }
             Self::Wait(source) => write!(f, "could not wait for the guarded command: {source}"),

@@ -22,9 +22,12 @@
 //!
 //! The crate has two halves, both used by the `memguard` binary:
 //!
-//! - [`guard::run`] runs a command and kills its whole process tree as soon as the tree's resident memory passes a
-//!   [`MemoryLimit`]. It reports an [`Outcome`]: the child's exit status and the peak seen, or the size at which the
-//!   tree was killed.
+//! - [`guard::run`] runs a command in a session of its own and kills its whole process tree as soon as it passes one
+//!   of its [`Limits`]: a [`MemoryLimit`] for the tree's resident memory, optionally one for each single process, and
+//!   optionally a [`TimeLimit`]. Whatever the command leaves running when it exits is killed too. It reports an
+//!   [`Outcome`]: the child's exit status, the [`Breach`] for which the tree was killed, or the stop that
+//!   [`guard::run_with`] was asked for through a [`Remote`]. A [`Watchdog`] process kills the tree if the guard dies
+//!   before it could.
 //! - [`policy::Policy`] decides which shell commands must run through `memguard run`: a command that matches a
 //!   "guarded" pattern is denied unless it matches an "exempt" pattern or already goes through `memguard run`. The
 //!   rules are data, read from a TOML file by [`rules_file::load`].
@@ -33,16 +36,24 @@
 //! use std::process::Command;
 //! use std::time::Duration;
 //!
-//! use memguard::{ByteSize, MemoryLimit, Outcome, guard};
+//! use memguard::{Breach, ByteSize, Limits, MemoryLimit, Outcome, TimeLimit, guard};
 //!
-//! const LIMIT: MemoryLimit = MemoryLimit::new(ByteSize::gb(10));
+//! const LIMITS: Limits = Limits {
+//!     tree: MemoryLimit::new(ByteSize::gb(6)),
+//!     process: Some(MemoryLimit::new(ByteSize::gb(2))),
+//!     time: Some(TimeLimit::new(Duration::from_secs(15 * 60))),
+//! };
 //!
 //! let mut command = Command::new("cargo");
 //! command.arg("test");
-//! match guard::run(&mut command, LIMIT, Duration::from_millis(500))? {
-//!     Outcome::Exited { status, peak } => println!("{status}, peak {}", peak.display().si()),
-//!     Outcome::Killed { used } => println!("killed at {}", used.display().si()),
+//! match guard::run(&mut command, LIMITS, Duration::from_millis(500))? {
+//!     Outcome::Exited { status, peak, .. } => println!("{status}, peak {}", peak.display().si()),
+//!     Outcome::Killed { breach: Breach::Tree, peak } => println!("killed at {}", peak.display().si()),
+//!     other => println!("{other:?}"),
 //! }
+//!
+//! // A memory limit alone guards the whole tree.
+//! guard::run(&mut command, MemoryLimit::new(ByteSize::gb(10)), Duration::from_millis(500))?;
 //! # Ok::<(), memguard::Error>(())
 //! ```
 
@@ -52,8 +63,10 @@ pub mod limit;
 pub mod policy;
 pub mod rules_file;
 mod tree;
+pub mod watchdog;
 
 pub use bytesize::ByteSize;
 pub use error::Error;
-pub use guard::Outcome;
-pub use limit::MemoryLimit;
+pub use guard::{Breach, Control, Limits, Outcome, Remote};
+pub use limit::{MemoryLimit, TimeLimit};
+pub use watchdog::Watchdog;

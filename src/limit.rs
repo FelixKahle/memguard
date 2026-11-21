@@ -18,15 +18,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//! The memory limit a process tree must stay within.
+//! The limits a guarded command must stay within: resident memory and wall-clock time.
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use bytesize::ByteSize;
 
 use crate::Error;
 
-/// A resident-memory limit for a whole process tree; never zero.
+/// A resident-memory limit, for a whole process tree or for each of its processes; never zero.
 ///
 /// A literal limit is written as a constant, so a zero limit fails the build:
 ///
@@ -109,9 +110,130 @@ impl FromStr for MemoryLimit {
     }
 }
 
+/// A wall-clock time limit for a guarded command; never zero.
+///
+/// A literal limit is written as a constant, so a zero limit fails the build:
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use memguard::TimeLimit;
+///
+/// const LIMIT: TimeLimit = TimeLimit::new(Duration::from_secs(15 * 60));
+/// assert!(LIMIT.is_exceeded_by(Duration::from_secs(16 * 60)));
+/// ```
+///
+/// A limit read from the outside is parsed, and must name its unit:
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use memguard::TimeLimit;
+///
+/// let limit: TimeLimit = "1m 30s".parse()?;
+/// assert_eq!(limit.duration(), Duration::from_secs(90));
+/// assert!("90".parse::<TimeLimit>().is_err());
+/// # Ok::<(), memguard::Error>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TimeLimit(Duration);
+
+impl TimeLimit {
+    /// Creates a limit of `duration`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `duration` is zero; in a `const` context that is a compile error.
+    #[must_use]
+    #[track_caller]
+    pub const fn new(duration: Duration) -> Self {
+        assert!(!duration.is_zero(), "TimeLimit must be greater than zero");
+        Self(duration)
+    }
+
+    /// The limit as a duration; never zero.
+    #[must_use]
+    pub const fn duration(self) -> Duration {
+        self.0
+    }
+
+    /// Whether a command that has run for `elapsed` is over the limit; running for exactly the limit is not.
+    #[must_use]
+    pub fn is_exceeded_by(self, elapsed: Duration) -> bool {
+        elapsed > self.0
+    }
+}
+
+impl FromStr for TimeLimit {
+    type Err = Error;
+
+    /// Parses a duration with a unit, such as `90s`, `15m`, `1h 30m` or `500ms`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TimeLimitUnparsable`] for anything that is not a duration with a unit, and
+    /// [`Error::TimeLimitZero`] for a duration of zero.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let duration = humantime::parse_duration(input.trim()).map_err(|source| {
+            Error::TimeLimitUnparsable {
+                input: input.to_owned(),
+                source,
+            }
+        })?;
+        if duration.is_zero() {
+            return Err(Error::TimeLimitZero {
+                input: input.to_owned(),
+            });
+        }
+        Ok(Self(duration))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Time units parse the way the README promises.
+    #[test]
+    fn parses_time_units() {
+        let parse = |s: &str| s.parse::<TimeLimit>().map(TimeLimit::duration).ok();
+        assert_eq!(parse("500ms"), Some(Duration::from_millis(500)));
+        assert_eq!(parse("90s"), Some(Duration::from_secs(90)));
+        assert_eq!(parse("15m"), Some(Duration::from_secs(900)));
+        assert_eq!(parse("1h 30m"), Some(Duration::from_secs(5400)));
+    }
+
+    /// Bare numbers, zero and garbage are rejected with the matching error, which names the type.
+    #[test]
+    fn rejects_bad_time_limits() {
+        assert!(matches!(
+            "90".parse::<TimeLimit>(),
+            Err(Error::TimeLimitUnparsable { .. })
+        ));
+        assert!(matches!(
+            "soon".parse::<TimeLimit>(),
+            Err(Error::TimeLimitUnparsable { .. })
+        ));
+        let zero = "0s".parse::<TimeLimit>().unwrap_err();
+        assert!(matches!(zero, Error::TimeLimitZero { .. }));
+        assert!(zero.to_string().contains("TimeLimit"));
+        assert!(format!("{:?}", TimeLimit::new(Duration::from_secs(1))).contains("TimeLimit"));
+    }
+
+    /// Running for exactly the limit is allowed; one nanosecond more is not.
+    #[test]
+    fn time_limit_is_inclusive() {
+        let limit = TimeLimit::new(Duration::from_secs(1));
+        assert!(!limit.is_exceeded_by(Duration::from_secs(1)));
+        assert!(limit.is_exceeded_by(Duration::from_nanos(1_000_000_001)));
+    }
+
+    /// The const constructor rejects zero at run time too.
+    #[test]
+    #[should_panic(expected = "TimeLimit must be greater than zero")]
+    fn time_limit_new_rejects_zero() {
+        let _ = TimeLimit::new(Duration::ZERO);
+    }
 
     /// Units parse the way the README promises.
     #[test]

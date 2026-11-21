@@ -4,7 +4,7 @@
 name = "memguard"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 publish = false
 license = "MIT"
 description = "Kill a process tree when its resident memory passes a limit, and check which commands need that guard."
@@ -21,9 +21,21 @@ humantime = { version = "2.4.0", default-features = false }
 # needed because patterns use the Unicode-aware `\s`, `\S` and `\b`; the `perf` features are left out because a
 # check matches one short string per process.
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
-# Derives deserialisation of the rules file, the only data that crosses a process boundary.
+# Puts the command in a session of its own (`setsid`, which std has not stabilised) and waits for it to exit
+# without reaping it (`waitid` with `WNOWAIT`), so that its pid and session id cannot be reused while the guard still
+# kills by them. `process` holds both calls; `std` converts its errors into `std::io::Error`.
+rustix = { version = "1.1.6", default-features = false, features = ["std", "process"] }
+# Derives (de)serialisation of the data that crosses a process boundary: the rules file and the watchdog's
+# announcement.
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
-# Portable process table (pids, parents, resident memory) and kill, instead of shelling out to `ps` or calling libc.
+# The guard's announcement to its watchdog process is one JSON line on a pipe; also the serde round trip in tests.
+serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+# Delivers the signals that stop or suspend `memguard run` to a thread instead of ending the process, and stops the
+# guard as SIGTSTP's default would. Doing that by hand needs `unsafe` signal handlers. `iterator` is the blocking
+# signal iterator the forwarding thread reads; `channel`, which it needs, comes with it.
+signal-hook = { version = "0.4.6", default-features = false, features = ["iterator"] }
+# Portable process table (pids, parents, sessions, start times, resident memory) and signals, instead of shelling out
+# to `ps` or calling libc.
 # Only `system` is enabled: disks, networks, components and users are not used.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 # Reads the rules file. `parse` reads TOML, `serde` deserialises it into the rules type and `std` makes its error a
@@ -33,8 +45,6 @@ toml = { version = "1.1.8", default-features = false, features = ["std", "serde"
 [dev-dependencies]
 # Property tests for the policy and the process-tree walk; a strategy library is not worth writing by hand.
 proptest = "1.11.0"
-# The serde round trip of the rules type that every serialisable type gets.
-serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
