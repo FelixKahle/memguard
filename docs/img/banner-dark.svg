@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+  <title id="title">memguard</title>
+  <desc id="desc">A process tree's memory climbs until it crosses a dashed limit line, where memguard kills the whole tree with SIGKILL and the memory drops to zero.</desc>
+  <rect x="0.5" y="0.5" width="1279" height="319" rx="16" fill="#161b22" stroke="#30363d"/>
+
+  <text x="64" y="146" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="76" font-weight="700" fill="#e6edf3" letter-spacing="-2">mem<tspan fill="#3fb950">guard</tspan></text>
+  <text x="66" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="23" fill="#9198a1">Kills a runaway process tree before it swaps your machine.</text>
+  <rect x="64" y="222" width="404" height="44" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="84" y="250" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#9198a1">$ <tspan fill="#e6edf3">memguard run 6G cargo test</tspan></text>
+
+  <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14">
+    <line x1="780" y1="262" x2="1216" y2="262" stroke="#262c36" stroke-width="2"/>
+    <line x1="780" y1="112" x2="1216" y2="112" stroke="#d29922" stroke-width="2" stroke-dasharray="8 6"/>
+    <text x="1216" y="100" text-anchor="end" fill="#d29922">limit 6G</text>
+    <text x="780" y="288" fill="#9198a1">resident memory of the whole tree</text>
+    <text x="1216" y="288" text-anchor="end" fill="#9198a1">time →</text>
+
+    <path d="M780,252 L812,248 L844,241 L876,236 L908,226 L940,214 L972,197 L1004,176 L1032,150 L1060,112 L1060,262 L780,262 Z" fill="#3fb950" fill-opacity="0.12"/>
+    <path d="M1060,112 L1084,78 L1104,40" fill="none" stroke="#9198a1" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round" opacity="0.6"/>
+    <path d="M780,252 L812,248 L844,241 L876,236 L908,226 L940,214 L972,197 L1004,176 L1032,150 L1060,112" fill="none" stroke="#3fb950" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M1060,112 L1060,261 L1216,261" fill="none" stroke="#f85149" stroke-width="3" stroke-dasharray="6 5"/>
+    <circle cx="1060" cy="112" r="9" fill="#161b22" stroke="#f85149" stroke-width="4"/>
+    <text x="1078" y="154" font-weight="700" fill="#f85149">SIGKILL</text>
+    <text x="1078" y="174" fill="#9198a1">every process</text>
+    <text x="1078" y="192" fill="#9198a1">of the tree</text>
+  </g>
+</svg>

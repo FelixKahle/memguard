@@ -70,3 +70,9 @@ pub use error::Error;
 pub use guard::{Breach, Control, Limits, Outcome, Remote};
 pub use limit::{MemoryLimit, TimeLimit};
 pub use watchdog::Watchdog;
+
+/// The examples of `docs/library.md`, compiled and run as doctests so that the guide cannot drift from the API.
+#[cfg(doctest)]
+#[doc = include_str!("../docs/library.md")]
+#[derive(Debug)]
+pub struct LibraryGuide;
